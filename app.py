@@ -7,6 +7,8 @@ That is the point: you will add both, lesson by lesson, in Units 2 and 3.
 
 import sqlite3
 from security_utils import create_password_hash, verify_password
+from werkzeug.security import generate_password_hash
+from werkzeug.security import check_password_hash
 from flask import Flask, g, jsonify, request
 
 DATABASE = "recipes.db"
@@ -170,6 +172,38 @@ def register():
             "name": row["name"],
         }
     ), 201
+
+@app.post("/login")
+def login():
+    data = request.get_json(silent=True)
+
+    if not data:
+        return jsonify({"error": "email and password are required"}), 400
+
+    email = data.get("email")
+    password = data.get("password")
+
+    if not email or not password:
+        return jsonify({"error": "email and password are required"}), 400
+
+    db = get_db()
+    row = db.execute(
+        "SELECT id, email, name, password_hash FROM users WHERE email = ?",
+        (email,),
+    ).fetchone()
+
+    # Generic failure: unknown email OR wrong password
+    if row is None or not check_password_hash(row["password_hash"], password):
+        return jsonify({"error": "invalid credentials"}), 401
+
+    # Success: return safe identity info only
+    return jsonify(
+        {
+            "id": row["id"],
+            "email": row["email"],
+            "name": row["name"],
+        }
+    ), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
