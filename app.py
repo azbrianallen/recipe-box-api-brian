@@ -7,14 +7,22 @@ That is the point: you will add both, lesson by lesson, in Units 2 and 3.
 
 import sqlite3
 from security_utils import create_password_hash, verify_password
-from werkzeug.security import generate_password_hash
-from werkzeug.security import check_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 from flask import Flask, g, jsonify, request
+
+import os
+from dotenv import load_dotenv
+import jwt
+from datetime import datetime, timedelta
+
+load_dotenv()
 
 DATABASE = "recipes.db"
 
 app = Flask(__name__)
 
+app.config["JWT_SECRET"] = os.environ.get("JWT_SECRET")
+print("JWT_SECRET loaded?", bool(app.config["JWT_SECRET"]))
 
 def get_db():
     if "db" not in g:
@@ -196,12 +204,23 @@ def login():
     if row is None or not check_password_hash(row["password_hash"], password):
         return jsonify({"error": "invalid credentials"}), 401
 
-    # Success: return safe identity info only
+    # Success: issue a signed JWT carrying identity + expiry
+    payload = {
+        "sub": row["id"],                 # subject = user id
+        "email": row["email"],
+        "name": row["name"],
+        "exp": datetime.utcnow() + timedelta(hours=1),
+    }
+
+    token = jwt.encode(
+        payload,
+        app.config["JWT_SECRET"],
+        algorithm="HS256",
+    )
+
     return jsonify(
         {
-            "id": row["id"],
-            "email": row["email"],
-            "name": row["name"],
+            "token": token,
         }
     ), 200
 
