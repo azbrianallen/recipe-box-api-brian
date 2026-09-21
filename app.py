@@ -4,6 +4,9 @@ A working Flask + SQLite CRUD API for recipes. It stores data perfectly —
 and it trusts everyone. There is no authentication and no authorization yet.
 That is the point: you will add both, lesson by lesson, in Units 2 and 3.
 """
+import jwt
+from datetime import datetime, timedelta
+from jwt import InvalidTokenError, ExpiredSignatureError
 
 import sqlite3
 from security_utils import create_password_hash, verify_password
@@ -12,8 +15,6 @@ from flask import Flask, g, jsonify, request
 
 import os
 from dotenv import load_dotenv
-import jwt
-from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -21,8 +22,8 @@ DATABASE = "recipes.db"
 
 app = Flask(__name__)
 
-app.config["JWT_SECRET"] = os.environ.get("JWT_SECRET")
-print("JWT_SECRET loaded?", bool(app.config["JWT_SECRET"]))
+app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY")
+print("JWT_SECRET_KEY loaded?", bool(app.config["JWT_SECRET_KEY"]))
 
 def get_db():
     if "db" not in g:
@@ -69,9 +70,32 @@ def get_recipe(recipe_id):
         return jsonify({"error": "recipe not found"}), 404
     return jsonify(recipe_to_dict(row))
 
-
 @app.post("/recipes")
 def create_recipe():
+    # 1) Check Authorization header
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return jsonify({"error": "invalid credentials"}), 401
+
+    # 2) Extract the token part
+    token = auth_header.split(" ", 1)[1].strip()
+
+    # 3) Verify the token signature and extract identity
+    try:
+        claims = jwt.decode(
+            token,
+            app.config["JWT_SECRET_KEY"],
+            algorithms=["HS256"],
+        )
+    except ExpiredSignatureError:
+        return jsonify({"error": "token has expired, please log in again"}), 401
+    except InvalidTokenError:
+        return jsonify({"error": "invalid credentials"}), 401
+
+    # 4) Use the verified identity if needed
+    user_id = claims.get("sub")  # authenticated identity
+
+    # (for now we just trust any authenticated user and continue)
     data = request.get_json(silent=True)
     if not data or not data.get("title") or not data.get("ingredients"):
         return jsonify({"error": "title and ingredients are required"}), 400
@@ -95,9 +119,30 @@ def create_recipe():
     ).fetchone()
     return jsonify(recipe_to_dict(row)), 201
 
-
 @app.patch("/recipes/<int:recipe_id>")
 def update_recipe(recipe_id):
+    # 1) Check Authorization header
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return jsonify({"error": "invalid credentials"}), 401
+
+    # 2) Extract the token part
+    token = auth_header.split(" ", 1)[1].strip()
+
+    # 3) Verify the token signature and extract identity
+    try:
+        claims = jwt.decode(
+            token,
+            app.config["JWT_SECRET_KEY"],
+            algorithms=["HS256"],
+        )
+    except InvalidTokenError:
+        return jsonify({"error": "invalid credentials"}), 401
+
+    # 4) Use the verified identity if needed
+    user_id = claims.get("sub")  # authenticated identity
+
+    # ---- existing logic below ----
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "a JSON body is required"}), 400
@@ -127,9 +172,30 @@ def update_recipe(recipe_id):
     ).fetchone()
     return jsonify(recipe_to_dict(row))
 
-
 @app.delete("/recipes/<int:recipe_id>")
 def delete_recipe(recipe_id):
+    # 1) Check Authorization header
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return jsonify({"error": "invalid credentials"}), 401
+
+    # 2) Extract the token part
+    token = auth_header.split(" ", 1)[1].strip()
+
+    # 3) Verify the token signature and extract identity
+    try:
+        claims = jwt.decode(
+            token,
+            app.config["JWT_SECRET_KEY"],
+            algorithms=["HS256"],
+        )
+    except InvalidTokenError:
+        return jsonify({"error": "invalid credentials"}), 401
+
+    # 4) Use the verified identity if needed
+    user_id = claims.get("sub")  # authenticated identity
+
+    # ---- existing logic below ----
     db = get_db()
     cur = db.execute("DELETE FROM recipes WHERE id = ?", (recipe_id,))
     db.commit()
@@ -209,12 +275,12 @@ def login():
         "sub": row["id"],                 # subject = user id
         "email": row["email"],
         "name": row["name"],
-        "exp": datetime.utcnow() + timedelta(hours=1),
+        "exp": datetime.utcnow() + timedelta(seconds=10),
     }
 
     token = jwt.encode(
         payload,
-        app.config["JWT_SECRET"],
+        app.config["JWT_SECRET_KEY"],
         algorithm="HS256",
     )
 
