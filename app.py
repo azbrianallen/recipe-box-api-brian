@@ -13,6 +13,44 @@ from jwt import ExpiredSignatureError, InvalidTokenError  # type: ignore[reportM
 from werkzeug.security import check_password_hash, generate_password_hash
 DATABASE = "recipes.db"
 
+# ==========================================
+# Authentication Decorator
+# ==========================================
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return jsonify({"error": "invalid credentials"}), 401
+
+        token = auth_header.split(" ", 1)[1].strip()
+        print("DEBUG TOKEN FROM HEADER:", repr(token))
+
+        try:
+            claims = jwt.decode(
+                token,
+                app.config["JWT_SECRET_KEY"],
+                algorithms=["HS256"],
+            )
+            print("DEBUG CLAIMS:", claims)
+            g.user_id = int(claims.get("sub"))
+            g.user_role = claims.get("role")
+        except ExpiredSignatureError:
+            print("DEBUG: ExpiredSignatureError")
+            return jsonify({"error": "token has expired, please log in again"}), 401
+        except InvalidTokenError as e:
+            print("DEBUG: InvalidTokenError", repr(str(e)))
+            return jsonify({"error": "invalid credentials"}), 401
+
+        return f(*args, **kwargs)
+
+    return decorated
+
+# ==========================================
+# Owner or Admin Required 
+# ==========================================
+
 def owner_or_admin_required(f):
     @wraps(f)
     def wrapper(recipe_id, *args, **kwargs):
@@ -41,8 +79,8 @@ def owner_or_admin_required(f):
 
 app = Flask(__name__) 
 
-app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY")
-print("JWT_SECRET_KEY loaded?", bool(app.config["JWT_SECRET_KEY"]))
+app.config["JWT_SECRET_KEY"] = os.environ.get("JWT_SECRET_KEY") or "dev-secret-key"
+print("JWT_SECRET_KEY value:", repr(app.config["JWT_SECRET_KEY"]))
 
 
 # ==========================================
@@ -72,37 +110,6 @@ def recipe_to_dict(row):
         "instructions": row["instructions"],
         "is_public": bool(row["is_public"]),
     }
-
-
-# ==========================================
-# Authentication Decorator
-# ==========================================
-
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            return jsonify({"error": "invalid credentials"}), 401
-
-        token = auth_header.split(" ", 1)[1].strip()
-
-        try:
-            claims = jwt.decode(
-                token,
-                app.config["JWT_SECRET_KEY"],
-                algorithms=["HS256"],
-            )
-            g.user_id = claims.get("sub")
-            g.user_role = claims.get("role")  # new line
-        except ExpiredSignatureError:
-            return jsonify({"error": "token has expired, please log in again"}), 401
-        except InvalidTokenError:
-            return jsonify({"error": "invalid credentials"}), 401
-
-        return f(*args, **kwargs)
-
-    return decorated
 
 
 # ==========================================
@@ -174,12 +181,13 @@ def login():
         return jsonify({"error": "invalid credentials"}), 401
 
     payload = {
-        "sub": row["id"],
+       "sub": str(row["id"]),  # 👈 make sub a string
         "email": row["email"],
         "name": row["name"],
-        "role": row["role"],  # ✅ new
+        "role": row["role"],
         "exp": datetime.now(timezone.utc) + timedelta(minutes=60),
     }
+
 
     token = jwt.encode(
         payload,
@@ -189,9 +197,9 @@ def login():
 
     return jsonify({"token": token}), 200
 
-# ==========================================
-# Recipe Routes
-# ==========================================
+#  ==========================================
+#  Recipe Routes
+#  ==========================================
 
 @app.get("/")
 def hello():
