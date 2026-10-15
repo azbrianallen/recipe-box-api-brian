@@ -12,9 +12,11 @@ from app.routes.auth import auth_bp
 from app.routes.recipes import recipes_bp
 
 
-DATABASE = os.environ.get("DATABASE_PATH")
-if not DATABASE:
-    raise RuntimeError("DATABASE_PATH environment variable is required")
+def get_db_connection():
+    db_path = current_app.config["DATABASE_PATH"]
+    conn = sqlite3.connect(db_path)
+    # ... any other setup, like row_factory ...
+    return conn
 
 def recipe_to_dict(row):
     if row is None:
@@ -93,6 +95,9 @@ class BaseConfig(Config):
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
     if not JWT_SECRET_KEY:
         raise RuntimeError("JWT_SECRET_KEY environment variable is required")
+    DATABASE_PATH = os.environ.get("DATABASE_PATH")
+    if not DATABASE_PATH:
+        raise RuntimeError("DATABASE_PATH environment variable is required") 
 
 class DevConfig(BaseConfig):
     # later we can add more dev-specific settings here
@@ -102,9 +107,14 @@ class ProdConfig(BaseConfig):
     # later we can add more prod-specific settings here
     pass
 
+class TestConfig(BaseConfig):
+    DATABASE_PATH = "instance/test_recipes.db"
+
+
 config_classes = {
     "development": DevConfig,
     "production": ProdConfig,
+    "testing": TestConfig,
 }
 
 def create_app(config_name="development"):
