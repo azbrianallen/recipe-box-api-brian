@@ -1,7 +1,4 @@
-"""Recipe Box API — BE104 course skeleton.
-
-A working Flask + SQLite CRUD API for recipes with JWT authentication.
-"""
+from app.db import get_db
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -14,22 +11,15 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from app.routes.auth import auth_bp 
 from app.routes.recipes import recipes_bp
 
+
 DATABASE = os.environ.get("DATABASE_PATH")
 if not DATABASE:
     raise RuntimeError("DATABASE_PATH environment variable is required")
-
-def get_db():
-    if "db" not in g:
-        g.db = sqlite3.connect(DATABASE)
-        g.db.row_factory = sqlite3.Row
-        g.db.execute("PRAGMA foreign_keys = ON")
-    return g.db
 
 def recipe_to_dict(row):
     if row is None:
         return None
     return {key: row[key] for key in row.keys()}
-
 
 # ==========================================
 # Authentication Decorator
