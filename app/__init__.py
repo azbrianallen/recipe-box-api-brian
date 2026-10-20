@@ -1,4 +1,5 @@
 from app.db import get_db
+from app.extensions import db
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -11,17 +12,15 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from app.routes.auth import auth_bp 
 from app.routes.recipes import recipes_bp
 
+from importlib import import_module
 
-def get_db_connection():
-    db_path = current_app.config["DATABASE_PATH"]
-    conn = sqlite3.connect(db_path)
-    # ... any other setup, like row_factory ...
-    return conn
+try:
+    load_dotenv = import_module("dotenv").load_dotenv
+except ModuleNotFoundError:
+    load_dotenv = None
 
-def recipe_to_dict(row):
-    if row is None:
-        return None
-    return {key: row[key] for key in row.keys()}
+if load_dotenv is not None:
+    load_dotenv()
 
 # ==========================================
 # Authentication Decorator
@@ -91,13 +90,24 @@ class Config:
     pass
 
 
+import os
+
 class BaseConfig(Config):
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
     if not JWT_SECRET_KEY:
         raise RuntimeError("JWT_SECRET_KEY environment variable is required")
+        
     DATABASE_PATH = os.environ.get("DATABASE_PATH")
     if not DATABASE_PATH:
-        raise RuntimeError("DATABASE_PATH environment variable is required") 
+        raise RuntimeError("DATABASE_PATH environment variable is required")
+
+    # Turn DATABASE_PATH into an absolute path under the project root
+    BASE_DIR = os.path.abspath(os.path.dirname(__file__))  # app/ directory
+    DB_ABS_PATH = os.path.join(BASE_DIR, "..", DATABASE_PATH)
+
+    SQLALCHEMY_DATABASE_URI = f"sqlite:///{DB_ABS_PATH}"
+    
+    SQLALCHEMY_TRACK_MODIFICATIONS = False 
 
 class DevConfig(BaseConfig):
     # later we can add more dev-specific settings here
@@ -122,8 +132,11 @@ def create_app(config_name="development"):
 
     config_class = config_classes.get(config_name, DevConfig)
     app.config.from_object(config_class)
+    
+    db.init_app(app)
+
     print("JWT_SECRET_KEY value:", repr(app.config["JWT_SECRET_KEY"]))
-    app.register_blueprint(auth_bp)
+    app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(recipes_bp, url_prefix="/recipes") 
 
     @app.teardown_appcontext
