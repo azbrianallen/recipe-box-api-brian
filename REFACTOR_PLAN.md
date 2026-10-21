@@ -52,3 +52,11 @@ recipe-box/
 8. DELETE - /recipes/<int:recipe_id> → Inputs: Authorization: Bearer <token> (Header), recipe_id (URL path) | Expected Status: 204 No Content | Important Rules: Requires valid auth token (401). Requires user to be the owner or an admin (returns 403 if unauthorized, 404 if recipe doesn't exist). Successfully removes the item from the database and returns an empty body.
 
 Total acceptance-list items: 8
+
+--- 
+
+## 3. Endpoints that must NEVER be cached
+
+1. GET /me — user-specific and authorization-sensitive data; caching could leak one user’s data to another.
+
+2. POST /login — response depends on credentials and current session state; must always be fresh. 
