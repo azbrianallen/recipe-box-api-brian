@@ -1,16 +1,17 @@
 from app.db import get_db
-from app.extensions import db
+from app.extensions import db, migrate, cache, limiter
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 
 import jwt  # type: ignore[reportMissingImports]
-from flask import Flask, current_app, g, jsonify, request
+from flask import Flask, app, current_app, g, jsonify, request
 from jwt import ExpiredSignatureError, InvalidTokenError  # type: ignore[reportMissingImports]
 from werkzeug.security import check_password_hash, generate_password_hash
 from app.routes.auth import auth_bp 
 from app.routes.recipes import recipes_bp
+from app.routes.favorites import favorites_bp 
 
 from importlib import import_module
 
@@ -94,20 +95,17 @@ import os
 
 class BaseConfig(Config):
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
-    if not JWT_SECRET_KEY:
-        raise RuntimeError("JWT_SECRET_KEY environment variable is required")
-        
     DATABASE_PATH = os.environ.get("DATABASE_PATH")
-    if not DATABASE_PATH:
-        raise RuntimeError("DATABASE_PATH environment variable is required")
 
-    # Turn DATABASE_PATH into an absolute path under the project root
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))  # app/ directory
-    DB_ABS_PATH = os.path.join(BASE_DIR, "..", DATABASE_PATH)
 
-    SQLALCHEMY_DATABASE_URI = f"sqlite:///{DB_ABS_PATH}"
-    
-    SQLALCHEMY_TRACK_MODIFICATIONS = False 
+    # For now, just use DATABASE_PATH directly; let env control the full path
+    SQLALCHEMY_DATABASE_URI = f"sqlite:///{DATABASE_PATH}"
+
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    CACHE_TYPE = "SimpleCache"
+    CACHE_DEFAULT_TIMEOUT = 60  # seconds for now
 
 class DevConfig(BaseConfig):
     # later we can add more dev-specific settings here
@@ -134,11 +132,15 @@ def create_app(config_name="development"):
     app.config.from_object(config_class)
     
     db.init_app(app)
-
+    migrate.init_app(app, db)
+    cache.init_app(app)
+    limiter.init_app(app)
+    
     print("JWT_SECRET_KEY value:", repr(app.config["JWT_SECRET_KEY"]))
     app.register_blueprint(auth_bp, url_prefix="/auth")
     app.register_blueprint(recipes_bp, url_prefix="/recipes") 
-
+    app.register_blueprint(favorites_bp, url_prefix="/favorites")
+    
     @app.teardown_appcontext
     def close_db(exception):
         db = g.pop("db", None)
