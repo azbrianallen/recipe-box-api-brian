@@ -90,12 +90,12 @@ def owner_or_admin_required(f):
 class Config:
     pass
 
-
 import os
 
 class BaseConfig(Config):
     JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY")
     DATABASE_PATH = os.environ.get("DATABASE_PATH")
+    NUTRITION_SERVICE_BASE_URL = os.environ.get("NUTRITION_SERVICE_BASE_URL", "http://127.0.0.1:5001")
 
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))  # app/ directory
 
